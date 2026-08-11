@@ -63,21 +63,24 @@ Se evaluó incluir planificador de mantenimiento e ingeniero de confiabilidad; s
 | 12 | Volumen estimado: ~2 plantas × ~10 dispositivos × ~50 sensores, frecuencia promedio ~30s → **~50 millones de filas/año** en mediciones | Justifica que particionamiento y vistas materializadas son necesarios de verdad, no un agregado cosmético | 12 |
 | 13 | Particionamiento por rango mensual sobre `medicion`; índices BRIN sobre timestamp | BRIN es mucho más chico que B-tree para datos naturalmente ordenados por tiempo | 7, 12 |
 | 14 | Datos de ejemplo: catálogo completo, población acotada a 4 tipos de dispositivo, 1-2 semanas de mediciones; volumen anual se documenta como proyección, no se carga completo | Evita generar millones de filas sin necesidad, mantiene el foco en la estimación razonada | 7, 12 |
-| 15 | Entidades separadas: `evento` (detectado por umbral) → puede generar → `alerta` (con estado y responsable) → puede originar → `orden_mantenimiento`/`intervencion` (texto libre + posible vector) | Un evento puede no generar alerta; una alerta puede agrupar varios eventos; separar da flexibilidad real del dominio | 3, 4 |
+| 15 | Entidades separadas en cadena: `medicion` → dispara → `evento` (por umbral) → dispara → `alerta` (con estado) → deriva en → `orden_trabajo` → implica → `intervencion` (texto libre + vector) | Evento depende de la medición concreta que lo dispara, no del sensor como fuente genérica. Un evento puede disparar varias alertas y una alerta puede derivar en varias órdenes de trabajo (1:N en ambos casos; ej. un mismo problema que requiere frentes de intervención distintos, eléctrico y mecánico). El responsable de una alerta se identifica indirectamente vía la intervención asociada, no como relación directa Usuario–Alerta | 3, 4 |
 | 16 | Historización de `configuracion_dispositivo` con `valido_desde`/`valido_hasta` (no se pisa la config anterior) | Una alerta pasada debe interpretarse con el umbral vigente en ese momento, no con el actual | 4, 11 |
 | 17 | Calidad del dato como generadora de eventos propios: una medición fuera de rango tras la validación, o la ausencia de reporte de un sensor (gap de conectividad), también dispara un evento de "calidad de dato", que puede derivar en una orden de trabajo apuntando a revisar el **sensor** (no el dispositivo) | Evita que un problema de instrumentación se confunda con una falla real del equipo, y aprovecha el mismo camino evento → alerta → orden de trabajo ya definido en la decisión 15, en vez de crear un mecanismo paralelo | 3, 4, 5, 10 |
+| 18 | Tanto el payload crudo de bronce como la configuración de sensor se implementan como **JSONB** (no JSON) | JSONB permite indexar y consultar claves internas sin necesidad de parsear el documento completo cada vez; se prioriza sobre JSON salvo que se necesite preservar el documento exactamente como llegó (orden de claves, duplicados) | 7, 9 |
 
 ---
 
 ## 4. Modelo conceptual (bloques principales)
 
-1. **Activos**: `ubicacion` (autoreferencial: planta → área → línea) → `dispositivo` → `sensor`.
-2. **Telemetría**: `medicion`, `evento`, `alerta`.
-3. **Gestión**: `usuario`, `orden_trabajo`, `intervencion` (con `observaciones text` + `embedding vector`), `configuracion_dispositivo` (historizada).
+1. **Activos**: `ubicacion` (autoreferencial: planta → área → línea) → `dispositivo` → `sensor`; `configuracion_dispositivo` (historizada, colgando de `dispositivo`).
+2. **Telemetría**: `medicion` → `evento` → `alerta`.
+3. **Gestión**: `usuario`, `orden_trabajo`, `intervencion` (con `observaciones text` + `embedding vector`).
 4. **Analítico**: `modelo`, `corrida_entrenamiento`, `metrica`, `prediccion`, features precalculadas por ventana.
 5. **Catálogos**: `tipo_dispositivo`, `tipo_variable`, `unidad`.
 
-Notas de cardinalidad: un sensor mide una sola variable; PK de `medicion` es compuesta `(sensor_id, timestamp)`; N:M entre `orden_trabajo` y `alerta` (una orden puede cerrar varias alertas).
+Notas de cardinalidad: un sensor mide una sola variable; PK de `medicion` es compuesta `(sensor_id, timestamp)`; `evento` depende de `medicion` (no del sensor directamente); `evento` → `alerta` y `alerta` → `orden_trabajo` son ambas 1:N (un evento puede disparar varias alertas; una alerta puede derivar en varias órdenes de trabajo); `medicion` → `corrida_entrenamiento` y `medicion` → `prediccion` son N:M.
+
+Modelo conceptual completo, con diagrama, atributos, las 15 relaciones y las restricciones del dominio, en `docs/Informe/Informe_03_ModeloConceptual.md` (+ `docs/modelo_conceptual.png`).
 
 ---
 
@@ -98,9 +101,9 @@ Encuadre: **lakehouse lógico dentro de un único PostgreSQL** (schemas, no sist
 
 | # | Actividad | Estado | Notas |
 |---|---|---|---|
-| 1 | Análisis del caso de uso | **Resuelto** | Informe redactado (`docs/informe/01_analisis_caso_uso.md`); dudas de la sesión resueltas o derivadas a las secciones correspondientes (ver decisiones 3, 11, 17) |
-| 2 | Relevamiento y clasificación de datos | Resuelto conceptualmente | Ver tabla de clasificación abajo |
-| 3 | Modelo conceptual | Resuelto conceptualmente | Falta diagrama formal (DER) |
+| 1 | Análisis del caso de uso | **Resuelto** | Informe redactado (`docs/Informe/Informe_01_AnalisisCasoUso.md`); dudas de la sesión resueltas o derivadas a las secciones correspondientes (ver decisiones 3, 11, 17) |
+| 2 | Relevamiento y clasificación de datos | **Resuelto** | Informe redactado (`docs/Informe/Informe_02_RelevamientoDatos.md`), con ejemplos preliminares mínimos por categoría. Se ampliará con más detalle y coherencia entre entidades en las actividades 4, 7 y 8 |
+| 3 | Modelo conceptual | **Resuelto** | Informe redactado (`docs/Informe/Informe_03_ModeloConceptual.md`) y diagrama formal completo (`docs/modelo_conceptual.png`, con fuente editable). 14 entidades, 15 relaciones con cardinalidades y restricciones del dominio |
 | 4 | Modelo lógico relacional | Resuelto conceptualmente | Falta tablero completo de tablas/PK/FK |
 | 5 | Normalización y desnormalización | Resuelto (decisión 8) | |
 | 6 | Selección tecnológica | Resuelto (decisión 7) | |
@@ -113,15 +116,17 @@ Encuadre: **lakehouse lógico dentro de un único PostgreSQL** (schemas, no sist
 
 ### Clasificación de datos (actividad 2)
 
-| Tipo | Ejemplos |
-|---|---|
-| Estructurados | mediciones, dispositivos, sensores, ubicaciones, alertas |
-| Semiestructurados | configuración de sensor (JSONB: umbrales, calibración), payload crudo en bronce |
-| No estructurados | observaciones de texto libre en intervenciones |
-| Operacionales | plata: lecturas recientes, alertas abiertas, órdenes en curso |
-| Analíticos | oro: features por ventana, KPIs, predicciones |
-| Sensibles | datos personales de usuarios/técnicos |
-| Auditoría | log de accesos, historial de configuración, cambios de estado de alertas |
+| Tipo | Ejemplos | Capa (Medallion) |
+|---|---|---|
+| Estructurados | dispositivos, sensores, ubicaciones, mediciones, alertas, órdenes de trabajo | plata / oro |
+| Semiestructurados | payload crudo de ingesta (JSONB), configuración de sensor (JSONB: umbrales, calibración) | bronce / plata |
+| No estructurados | observaciones de texto libre cargadas por el técnico en cada intervención | plata |
+| Operacionales | alertas abiertas o en revisión, órdenes de trabajo en curso | plata |
+| Analíticos | features calculadas por ventana, predicciones de falla, métricas de modelos | oro |
+| Sensibles | datos personales de usuarios y técnicos (nombre, email, etc. asociados a una intervención) | plata |
+| Auditoría / trazabilidad | log de cambios de estado de alertas, histórico de configuración de dispositivo | plata |
+
+Ejemplos completos por categoría (JSON, tablas de muestra) en `docs/informe/02_relevamiento_datos.md`.
 
 ### Consultas representativas identificadas (actividad 8)
 
@@ -158,7 +163,7 @@ Pendientes de la materia que pueden ajustar terminología (no la sustancia) de d
 - Informe en Markdown dividido por sección (`docs/informe/NN_seccion.md`), conversión a PDF con Pandoc **solo al final**.
 - Commits frecuentes y descriptivos, por archivo específico (no `git add .` salvo el commit inicial de estructura). Verificar que `user.email` de Git coincida con la cuenta de GitHub de cada uno.
 - Conflictos de Git esperables solo en este documento de contexto (es el único archivo que ambos tocan seguido); se minimizan agregando filas al final de las tablas en vez de editar líneas existentes, y se resuelven fácilmente si aparecen (no son destructivos).
-- Diagramas en Mermaid cuando sea posible (versionable, se renderiza en GitHub).
+- Diagramas: se versiona siempre la fuente editable junto al `.png` exportado, para que cualquiera del equipo pueda modificarlos después. Mermaid queda como opción cuando el diagrama sea simple (versionable en texto plano, se renderiza solo en GitHub); para diagramas con mucho cruce de relaciones se usa herramienta gráfica y se adjunta la imagen.
 
 ---
 
@@ -169,9 +174,9 @@ Pendientes de la materia que pueden ajustar terminología (no la sustancia) de d
 - Confirmar terminología una vez vistas las Clases 6 y 7.
 - Escribir el DDL real (actividad 7).
 - Escribir el SQL de las 6 consultas (actividad 8).
-- Diagramas formales: DER (actividad 3) y arquitectura (actividad 10).
+- Diagrama formal de arquitectura (actividad 10).
 - Decidir si este documento de contexto se versiona en el repo Git o queda solo como insumo de Claude Project Knowledge.
 
 ---
 
-*Última actualización: sesión del 11/08 (cierre de Actividad 1 — Análisis del caso de uso). Próximo paso: Actividad 2 (Relevamiento y clasificación de datos) o Actividad 3 (Modelo conceptual), según orden de trabajo del equipo.*
+*Última actualización: sesión del 11/08 (cierre de Actividad 3 — Modelo conceptual). Próximo paso: Actividad 4 (Modelo lógico relacional).*

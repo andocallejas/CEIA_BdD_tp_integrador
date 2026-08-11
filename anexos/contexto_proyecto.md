@@ -51,7 +51,7 @@ Se evaluó incluir planificador de mantenimiento e ingeniero de confiabilidad; s
 |---|---|---|---|
 | 1 | Mediciones en formato "largo/angosto" (una fila por lectura, no una columna por variable) | Flexible ante nuevos sensores/variables; estándar para series temporales | 4, 5, 9, 12 |
 | 2 | Arquitectura en capas Bronce/Plata/Oro (Medallion) vía **schemas de PostgreSQL** | Separa madurez del dato (crudo → validado → analítico); coincide con lo visto en Clase 5 | 7, 10, 11 |
-| 3 | RLS (Row-Level Security) para aislamiento por planta/ubicación, aplicado sobre plata **y también sobre las vistas de oro** | Sin RLS en oro, un agregado filtra datos entre plantas igual | 7, 11 |
+| 3 | RLS (Row-Level Security) para aislamiento por planta/ubicación, aplicado sobre plata y también sobre las vistas de oro. Para ocultar columnas sensibles dentro de una fila visible (ej. `tecnico_id` para el científico de datos), RLS **no alcanza** por ser un control a nivel de fila — se combina con vistas en oro que no proyectan esas columnas | Sin RLS en oro, un agregado filtra datos entre plantas igual; el ocultamiento de columnas requiere un mecanismo aparte (vista, o column-level GRANT) | 7, 11 |
 | 4 | Doble identidad: roles de PostgreSQL (técnicos, pocos) vs. usuarios de aplicación (tabla `usuario`, con rol de negocio) | Los usuarios finales no tienen credencial de base; la app se conecta con un rol de servicio y pasa el usuario por variable de sesión (`SET LOCAL app.usuario_id`), que las políticas RLS consultan | 11 |
 | 5 | Detección de eventos: trigger simple `AFTER INSERT` en la capa **plata** (no en bronce) | En bronce el dato no está validado (podría haber valores corruptos) → evita falsos positivos | 7, 10 |
 | 6 | Gestión de alertas (agrupar eventos, asignar, escalar) vive en la aplicación, no en la base | Es lógica de negocio con estado; un trigger no es el lugar apropiado | 10 |
@@ -59,12 +59,13 @@ Se evaluó incluir planificador de mantenimiento e ingeniero de confiabilidad; s
 | 8 | Normalización diferenciada por capa: plata en 3FN, oro deliberadamente desnormalizada (ancha, con agregados) | Cada capa optimiza para un patrón de acceso distinto: integridad de escritura vs. velocidad de lectura | 5 |
 | 9 | Búsqueda vectorial (pgvector) acotada **solo** a `intervencion.observaciones` (texto libre del técnico) | Caso de uso genuino: recuperar intervenciones pasadas con síntomas parecidos, descriptos en lenguaje natural. Independiente del análisis predictivo numérico (que consume series, no texto). Se descartó vectorizar la señal de vibración por ser mucho más compleja de justificar/implementar en el alcance del TP | 9 |
 | 10 | Riesgo de seguridad a documentar explícitamente: la búsqueda por similitud debe respetar RLS — no puede devolver intervenciones de una planta a la que el usuario no tiene acceso | Es el ángulo de "riesgo de exposición vía IA" que pide el enunciado | 9, 11 |
-| 11 | Retención: 1 año de detalle en plata, agregados (horarios/diarios) conservados más tiempo en oro | Un año captura estacionalidad real del dominio (ciclos de producción, verano/invierno); las agregaciones pesan mucho menos que el detalle | 12 |
+| 11 | Retención diferenciada por entidad: **mediciones** con 1 año de detalle en plata (agregados horarios/diarios conservados más tiempo en oro); **órdenes de trabajo e intervenciones** conservadas por un período bastante más extenso (potencialmente indefinido), al ser muchos menos registros y tener valor histórico real (ej. cómo se resolvió una falla similar años atrás) | Un año captura estacionalidad real del dominio en mediciones (ciclos de producción, verano/invierno) y limita el volumen de la serie; pero aplicar el mismo criterio a órdenes/intervenciones tiraría información de bajo volumen y alto valor analítico (insumo directo de la búsqueda por similitud) | 12 |
 | 12 | Volumen estimado: ~2 plantas × ~10 dispositivos × ~50 sensores, frecuencia promedio ~30s → **~50 millones de filas/año** en mediciones | Justifica que particionamiento y vistas materializadas son necesarios de verdad, no un agregado cosmético | 12 |
 | 13 | Particionamiento por rango mensual sobre `medicion`; índices BRIN sobre timestamp | BRIN es mucho más chico que B-tree para datos naturalmente ordenados por tiempo | 7, 12 |
 | 14 | Datos de ejemplo: catálogo completo, población acotada a 4 tipos de dispositivo, 1-2 semanas de mediciones; volumen anual se documenta como proyección, no se carga completo | Evita generar millones de filas sin necesidad, mantiene el foco en la estimación razonada | 7, 12 |
 | 15 | Entidades separadas: `evento` (detectado por umbral) → puede generar → `alerta` (con estado y responsable) → puede originar → `orden_mantenimiento`/`intervencion` (texto libre + posible vector) | Un evento puede no generar alerta; una alerta puede agrupar varios eventos; separar da flexibilidad real del dominio | 3, 4 |
 | 16 | Historización de `configuracion_dispositivo` con `valido_desde`/`valido_hasta` (no se pisa la config anterior) | Una alerta pasada debe interpretarse con el umbral vigente en ese momento, no con el actual | 4, 11 |
+| 17 | Calidad del dato como generadora de eventos propios: una medición fuera de rango tras la validación, o la ausencia de reporte de un sensor (gap de conectividad), también dispara un evento de "calidad de dato", que puede derivar en una orden de trabajo apuntando a revisar el **sensor** (no el dispositivo) | Evita que un problema de instrumentación se confunda con una falla real del equipo, y aprovecha el mismo camino evento → alerta → orden de trabajo ya definido en la decisión 15, en vez de crear un mecanismo paralelo | 3, 4, 5, 10 |
 
 ---
 
@@ -97,7 +98,7 @@ Encuadre: **lakehouse lógico dentro de un único PostgreSQL** (schemas, no sist
 
 | # | Actividad | Estado | Notas |
 |---|---|---|---|
-| 1 | Análisis del caso de uso | Borrador hecho | Se termina de refinar al final, con lo aprendido del resto |
+| 1 | Análisis del caso de uso | **Resuelto** | Informe redactado (`docs/informe/01_analisis_caso_uso.md`); dudas de la sesión resueltas o derivadas a las secciones correspondientes (ver decisiones 3, 11, 17) |
 | 2 | Relevamiento y clasificación de datos | Resuelto conceptualmente | Ver tabla de clasificación abajo |
 | 3 | Modelo conceptual | Resuelto conceptualmente | Falta diagrama formal (DER) |
 | 4 | Modelo lógico relacional | Resuelto conceptualmente | Falta tablero completo de tablas/PK/FK |
@@ -107,7 +108,7 @@ Encuadre: **lakehouse lógico dentro de un único PostgreSQL** (schemas, no sist
 | 8 | Consultas representativas | Pendiente | 6 consultas ya identificadas (ver abajo), falta escribir el SQL |
 | 9 | Semiestructurados/no estructurados/vectorial | Resuelto conceptualmente (decisiones 9-10) | Falta implementación |
 | 10 | Arquitectura de datos | Resuelto conceptualmente | Falta diagrama formal |
-| 11 | Seguridad, permisos, aislamiento | Resuelto conceptualmente (decisiones 3-4, 16) | Falta DDL de roles/políticas |
+| 11 | Seguridad, permisos, aislamiento | Resuelto conceptualmente (decisiones 3-4, 16) | Falta DDL de roles/políticas, y definir mecanismo de ocultamiento de columnas para el científico de datos (vista de oro sin la columna vs. column-level `GRANT`) |
 | 12 | Escalabilidad y rendimiento | Resuelto conceptualmente (decisiones 11-13) | |
 
 ### Clasificación de datos (actividad 2)
@@ -164,6 +165,7 @@ Pendientes de la materia que pueden ajustar terminología (no la sustancia) de d
 ## 9. Pendientes abiertos
 
 - Definir el mecanismo exacto de agrupamiento de alertas (evitar reabrir/duplicar alerta por el mismo evento sostenido en el tiempo).
+- Definir el mecanismo de ocultamiento de columnas sensibles para el científico de datos: vista de oro sin la columna vs. column-level `GRANT` (ver decisión 3 y actividad 11).
 - Confirmar terminología una vez vistas las Clases 6 y 7.
 - Escribir el DDL real (actividad 7).
 - Escribir el SQL de las 6 consultas (actividad 8).
@@ -172,4 +174,4 @@ Pendientes de la materia que pueden ajustar terminología (no la sustancia) de d
 
 ---
 
-*Última actualización: sesión del 11/08. Próximo paso: Actividad 1 (Análisis del caso de uso) en detalle.*
+*Última actualización: sesión del 11/08 (cierre de Actividad 1 — Análisis del caso de uso). Próximo paso: Actividad 2 (Relevamiento y clasificación de datos) o Actividad 3 (Modelo conceptual), según orden de trabajo del equipo.*

@@ -17,3 +17,6 @@ node_modules/
 # Salidas intermedias de Pandoc
 docs/*.aux
 docs/*.log
+
+# Carpetas de soporte
+auxiliar/

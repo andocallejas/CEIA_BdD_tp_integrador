@@ -1,0 +1,19 @@
+# Temporales de ofimática
+~$*
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Entornos y dependencias
+venv/
+.venv/
+__pycache__/
+node_modules/
+
+# Credenciales
+.env
+*.key
+
+# Salidas intermedias de Pandoc
+docs/*.aux
+docs/*.log

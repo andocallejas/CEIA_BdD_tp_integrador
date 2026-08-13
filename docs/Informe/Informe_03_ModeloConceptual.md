@@ -24,7 +24,7 @@ El diagrama completo se adjunta como `docs/modelo_conceptual.png`.
 | Analítico | **Modelo (ML)** | nombre, tipo, versión |
 | Analítico | **Corrida de Entrenamiento** | fecha, dataset usado, hiperparámetros |
 | Analítico | **Métrica** | nombre, valor |
-| Analítico | **Predicción** | ventana, probabilidad de falla, timestamp |
+| Analítico | **Predicción** | ventana, probabilidad de falla, umbral, timestamp |
 
 ## 3.3 Relaciones y cardinalidades
 
@@ -45,6 +45,7 @@ El diagrama completo se adjunta como `docs/modelo_conceptual.png`.
 | 13 | Modelo **tiene** Corrida de Entrenamiento | 1:N |
 | 14 | Modelo **genera** Predicción | 1:N |
 | 15 | Corrida de Entrenamiento **produce** Métrica | 1:N |
+| 16 | Predicción **dispara** Alerta | 1:N |
 
 > Adicionalmente, **Intervención se compara por similitud con Intervención** (vía embedding sobre el campo de observaciones). No se representa en el diagrama como relación estructural porque es una operación de consulta (búsqueda por similitud).
 
@@ -57,5 +58,6 @@ El diagrama completo se adjunta como `docs/modelo_conceptual.png`.
 - Evento depende de Medición: se detecta analizando el valor de una medición concreta, no directamente del sensor como fuente genérica.
 - Un evento puede disparar varias alertas y una alerta puede derivar en varias órdenes de trabajo (ambas 1:N).
 - Un evento por deficiencia en calidad de medición (medición fuera de rango o ausencia de reporte) se reporta asociada al sensor, nunca al dispositivo, para distinguir una falla de instrumentación de una falla real del equipo.
+- Cada alerta tiene un único origen: o un evento detectado por umbral, o una predicción de falla que supera el umbral del modelo — nunca ambos. Un mismo dispositivo puede tener varias alertas abiertas simultáneamente, incluso de orígenes distintos.
 - El responsable de una alerta se identifica indirectamente, a través del usuario que realizó la intervención asociada — no hay una relación directa Usuario–Alerta.
 - Ubicación se modela con una jerarquía autoreferencial (planta → área → línea), lo que permite resolver a qué planta pertenece cualquier nivel inferior — necesario para el aislamiento de datos por planta (RLS).

@@ -274,6 +274,8 @@ Ambos agregados sostienen los tableros de supervisión y el análisis histórico
 
 ### Features para el modelo predictivo
 
+Las columnas que se presentan a continuación tienen fines ilustrativos. El objetivo es mostrar el formato ancho que requiere el consumo por parte de un modelo de aprendizaje automático y su relación con el resto del esquema, no proponer un conjunto de features validado que realmente fuera a funcionar, lo cual excede el alcance de este trabajo. Lo mismo aplica al esquema de entrenamiento y predicción planteado: interesa cómo se estructuran y se relacionan los datos, no la eficacia del modelo.
+
 #### `oro.feature_motor_ventana`
 
 | Campo | Tipo | Descripción | Clave |
@@ -295,7 +297,13 @@ Ambos agregados sostienen los tableros de supervisión y el análisis histórico
 
 Una fila por dispositivo y ventana. La ventana es de **24 horas y se recalcula cada hora**, de modo que la tabla crece unas 175 mil filas al año, frente a los ~59 millones de `medicion`.
 
-Esta única tabla alimenta tanto el entrenamiento como la predicción, lo que garantiza que las features se calculen de forma idéntica en ambos casos. La diferencia está en qué filas usa cada uno: las anteriores al horizonte de predicción ya tienen `fallo_en_horizonte` cargado y sirven para entrenar; las más recientes lo tienen en `NULL` y son sobre las que se predice.
+La ventana y el horizonte son dos parámetros distintos. La ventana define cuánto se mira hacia atrás para resumir el comportamiento del equipo (24 horas). El horizonte define cuánto se mira hacia adelante al predecir: se adopta un valor inicial de 72 horas, tiempo razonable para planificar una intervención antes de la falla.
+
+De ahí surge el comportamiento de fallo_en_horizonte. Cuando la fila se calcula, todavía no se sabe qué va a pasar en las 72 horas siguientes, con lo cual la etiqueta queda en NULL y esa fila es sobre la que se predice. Transcurrido el horizonte, se verifica si hubo una intervención correctiva sobre el equipo en ese lapso y se carga la etiqueta, momento en que la fila pasa a estar disponible para entrenar. La tabla queda así dividida en filas maduras, que sirven para entrenamiento, y filas recientes, sobre las que se predice.
+
+Esta única tabla alimenta tanto el entrenamiento como la predicción, lo que garantiza que las features se calculen de forma idéntica en ambos casos. La diferencia está en qué filas usa cada uno: las anteriores al horizonte de predicción ya tienen `fallo_en_horizonte` cargado y sirven para entrenar; las más recientes lo tienen en `NULL` y son sobre las que se predice, como se mencionó anteriormente.
+
+La clave es compuesta con `id_dispositivo` y `ventana_hasta`. Esta combinación será utilizada luego desde la tabla oro.prediccion para poder identificar la prediccion a la fila de feature_motor_ventana utilizada. Ver notas en oro.prediccion.
 
 `fallo_en_horizonte` se almacena como columna en lugar de calcularse en cada entrenamiento.
 
@@ -379,5 +387,7 @@ Un `score` numérico acompañado de su umbral es la salida natural de prácticam
 
 ## 4.5 Diagrama
 
-El diagrama entidad-relación del modelo lógico, con todas las tablas, claves y relaciones, se adjunta como `docs/modelo_logico.png`. Se versiona junto con su fuente editable.
+El diagrama entidad-relación del modelo lógico, con todas las tablas, claves y relaciones, se adjunta como `docs/modelo_logico.png`. 
+Además se proporciona el acceso directo `docs/modelo_logico_interactivo` a la URL de dbdiagram que permite visualizar los elementos del modelo de manera interactiva.
+Finalmente, se agrega el código que genera el modelo en dbdiagram en `anexos/modelo_logico_interactivo.md`.
 

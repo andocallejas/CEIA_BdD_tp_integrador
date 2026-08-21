@@ -1,0 +1,15 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: tp_bdia_db
+    environment:
+      POSTGRES_PASSWORD: bdia
+      POSTGRES_DB: tp_bdia
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db:/db
+
+volumes:
+  pgdata:

@@ -79,6 +79,8 @@ Se evaluó incluir planificador de mantenimiento e ingeniero de confiabilidad; s
 | 26 | `id_dispositivo` **redundante** en `alerta` | El camino hasta el dispositivo se bifurca según el origen (`alerta`→`evento`→`sensor`→`dispositivo` o `alerta`→`prediccion`→`dispositivo`). Como RLS se evalúa fila por fila en toda consulta, sin la columna ese recorrido condicional se repetiría en cada evaluación | 4, 5, 11 |
 | 27 | El **límite base / aplicación** se documenta como sección canónica en la actividad 10, con menciones breves donde el tema aparece (actividades 4 y 7) | Criterio unificador de las decisiones 5, 6 y 22: la base registra hechos, la aplicación gobierna procesos con estado | 4, 7, 10 |
 | 28 | `intervencion.embedding` declarado como `vector(384)`, dimensión **preliminar** sujeta a confirmación al elegir el modelo de embeddings | 384 corresponde a modelos livianos multilingües tipo `all-MiniLM-L6-v2`. Si se opta por otro modelo la dimensión cambia, pero es una modificación acotada de una línea del esquema | 4, 9 |
+| 29 | Scripts SQL organizados en `db/` (subcarpetas `estructura`, `datos`, `indices_vistas`, `consultas`) con numeración global 00–18 como orden de ejecución; script maestro `db/run_all.sql` y `docker-compose.yml` (imagen `pgvector/pgvector:pg16`) | Permite reconstruir la base entera en orden con un solo comando y que el profe la ejecute sin instalar nada | 7 |
+| 30 | Dos triggers implementados (medición→evento y predicción→alerta predictiva); las alertas por umbral las crea la aplicación agrupando eventos, no un trigger | Coherente con la decisión 6: la base registra hechos, la app gobierna procesos. Un episodio anómalo genera muchos eventos pero una sola alerta, y esa agrupación es lógica de aplicación | 7, 10 |
 
 ---
 
@@ -118,8 +120,8 @@ Encuadre: **lakehouse lógico dentro de un único PostgreSQL** (schemas, no sist
 | 3 | Modelo conceptual | **Resuelto** | Informe redactado (`docs/Informe/Informe_03_ModeloConceptual.md`) y diagrama formal completo (`docs/modelo_conceptual.png`, con fuente editable). 14 entidades, **16 relaciones** con cardinalidades y restricciones del dominio |
 | 4 | Modelo lógico relacional | **Resuelto** | Informe redactado (`docs/Informe/Informe_04_ModeloLogico.md`). **22 tablas**: bronce 2, plata 13, oro 7, más 3 tablas de features declaradas como análogas. Diagrama en `docs/modelo_logico.png`, acceso directo `docs/modelo_logico_interactivo` y código fuente en `anexos/modelo_logico_interactivo.md` |
 | 5 | Normalización y desnormalización | **Resuelto** | Informe redactado (`docs/Informe/Informe_05_Normalizacion.md`). Cubre el criterio por patrón de acceso, la normalización de plata, qué está desnormalizado en oro, las excepciones deliberadas, las N:M por comprensión y los cuatro tipos de consumo |
-| 6 | Selección tecnológica | Resuelto (decisión 7) | |
-| 7 | Modelo físico e implementación mínima | Pendiente | DDL real, carga de ejemplo |
+| 6 | Selección tecnológica | **Resuelto** | Informe redactado (`docs/Informe/Informe_06_SeleccionTecnologica.md`); desarrolla la decisión 7 |
+| 7 | Modelo físico e implementación mínima | **Resuelto** | Informe redactado (`docs/Informe/Informe_07_ModeloFisicoImplementacion.md`). DDL completo de las 22 tablas + particiones + índices + triggers en `db/` (scripts 00–18), carga de ejemplo probada de punta a punta sobre PostgreSQL 16 + pgvector. `docker-compose.yml` y `db/run_all.sql` para levantar todo con un solo comando |
 | 8 | Consultas representativas | Pendiente | 6 consultas ya identificadas (ver abajo), falta escribir el SQL |
 | 9 | Semiestructurados/no estructurados/vectorial | Resuelto conceptualmente (decisiones 9-10) | Falta implementación |
 | 10 | Arquitectura de datos | Resuelto conceptualmente | Falta diagrama formal |
@@ -187,11 +189,14 @@ Pendientes de la materia que pueden ajustar terminología (no la sustancia) de d
 - Confirmar la **dimensión del vector** de `intervencion.embedding` al elegir el modelo de embeddings (actividad 9; ver decisión 28).
 - Verificar en la actividad 11 el costo del recorrido que RLS necesita sobre `intervencion` (`intervencion` → `orden_trabajo` → `alerta` → `dispositivo` → `ubicacion`, cuatro saltos en un único camino, sin bifurcaciones). Evaluar si conviene materializar la planta como se hizo en `alerta` (decisión 26). El volumen bajo de la tabla sugiere que no sería necesario.
 - Confirmar terminología una vez vistas las Clases 6 y 7.
-- Escribir el DDL real (actividad 7).
+- Aumentar el volumen de mediciones de ejemplo antes de la actividad 8: la carga actual (~44 mil filas, 10 días) valida el circuito pero es corta para que la consulta 6 (EXPLAIN plata vs oro) muestre diferencia real.
+- Completar los datos de ejemplo con un hueco de conectividad y su evento `ausencia de reporte` (hoy no hay datos de ese tipo, aunque el CHECK lo admite).
+- Calcular las features de bomba, cinta y tablero (por ahora sólo se pobló `feature_motor_ventana`).
+- Agregar un `.gitattributes` al repo para normalizar el fin de línea (LF) y evitar el ruido CRLF/LF entre Windows y el repositorio.
 - Escribir el SQL de las 6 consultas (actividad 8).
 - Diagrama formal de arquitectura (actividad 10).
 - Decidir si este documento de contexto se versiona en el repo Git o queda solo como insumo de Claude Project Knowledge.
 
 ---
 
-*Última actualización: sesión del 14/08 (cierre de Actividades 4 y 5 — Modelo lógico y Normalización). Próximo paso: Actividad 7 (Modelo físico e implementación mínima); la Actividad 6 ya está cubierta por la decisión 7.*
+*Última actualización: sesión del 21/08 (cierre de Actividades 6 y 7 — Selección tecnológica y Modelo físico e implementación). Próximo paso: Actividad 8 (Consultas representativas), previo aumento del volumen de datos de ejemplo.*

@@ -81,6 +81,8 @@ Se evaluó incluir planificador de mantenimiento e ingeniero de confiabilidad; s
 | 28 | `intervencion.embedding` declarado como `vector(384)`, dimensión **preliminar** sujeta a confirmación al elegir el modelo de embeddings | 384 corresponde a modelos livianos multilingües tipo `all-MiniLM-L6-v2`. Si se opta por otro modelo la dimensión cambia, pero es una modificación acotada de una línea del esquema | 4, 9 |
 | 29 | Scripts SQL organizados en `db/` (subcarpetas `estructura`, `datos`, `indices_vistas`, `consultas`) con numeración global 00–18 como orden de ejecución; script maestro `db/run_all.sql` y `docker-compose.yml` (imagen `pgvector/pgvector:pg16`) | Permite reconstruir la base entera en orden con un solo comando y que el profe la ejecute sin instalar nada | 7 |
 | 30 | Dos triggers implementados (medición→evento y predicción→alerta predictiva); las alertas por umbral las crea la aplicación agrupando eventos, no un trigger | Coherente con la decisión 6: la base registra hechos, la app gobierna procesos. Un episodio anómalo genera muchos eventos pero una sola alerta, y esa agrupación es lógica de aplicación | 7, 10 |
+| 31 | Embeddings cargados como vectores de ejemplo (no se integra el modelo real al repo); el esquema, el índice HNSW y la consulta de similitud quedan operativos | El foco del TP es cómo se estructura y consulta el dato vectorial, no la calidad del modelo. Calcular embeddings reales requiere un servicio externo, innecesario para demostrar el mecanismo | 9 |
+| 32 | Ocultamiento de `id_usuario` al científico de datos vía **vista de oro** sin la columna; column-level `GRANT` queda documentado como alternativa | La vista es más simple y explícita (el rol no tiene por dónde acceder a la columna); el GRANT es más granular pero más frágil ante nuevas columnas | 11 |
 
 ---
 
@@ -122,11 +124,11 @@ Encuadre: **lakehouse lógico dentro de un único PostgreSQL** (schemas, no sist
 | 5 | Normalización y desnormalización | **Resuelto** | Informe redactado (`docs/Informe/Informe_05_Normalizacion.md`). Cubre el criterio por patrón de acceso, la normalización de plata, qué está desnormalizado en oro, las excepciones deliberadas, las N:M por comprensión y los cuatro tipos de consumo |
 | 6 | Selección tecnológica | **Resuelto** | Informe redactado (`docs/Informe/Informe_06_SeleccionTecnologica.md`); desarrolla la decisión 7 |
 | 7 | Modelo físico e implementación mínima | **Resuelto** | Informe redactado (`docs/Informe/Informe_07_ModeloFisicoImplementacion.md`). DDL completo de las 22 tablas + particiones + índices + triggers en `db/` (scripts 00–18), carga de ejemplo probada de punta a punta sobre PostgreSQL 16 + pgvector. `docker-compose.yml` y `db/run_all.sql` para levantar todo con un solo comando |
-| 8 | Consultas representativas | Pendiente | 6 consultas ya identificadas (ver abajo), falta escribir el SQL |
-| 9 | Semiestructurados/no estructurados/vectorial | Resuelto conceptualmente (decisiones 9-10) | Falta implementación |
-| 10 | Arquitectura de datos | Resuelto conceptualmente | Falta diagrama formal |
-| 11 | Seguridad, permisos, aislamiento | Resuelto conceptualmente (decisiones 3-4, 16) | Falta DDL de roles/políticas, y definir mecanismo de ocultamiento de columnas para el científico de datos (vista de oro sin la columna vs. column-level `GRANT`) |
-| 12 | Escalabilidad y rendimiento | Resuelto conceptualmente (decisiones 11-13) | |
+| 8 | Consultas representativas | **Resuelto** | Informe redactado (`docs/Informe/Informe_08_ConsultasRepresentativas.md`). Las 6 consultas en SQL (`db/consultas/20–25`) más una 7ª sobre JSONB (`26`), probadas. EXPLAIN de plata vs oro con volumen real (~1 M mediciones) |
+| 9 | Semiestructurados/no estructurados/vectorial | **Resuelto** | Informe redactado (`docs/Informe/Informe_09_BusquedaVectorial.md`) + `nosql/modelo_nosql.md` y `vectorial/modelo_vectorial.md`. Embeddings de ejemplo (`db/datos/30`), índice HNSW (`db/indices_vistas/31`) y consulta de similitud (`db/consultas/32`). Opción conceptual (sin modelo real) |
+| 10 | Arquitectura de datos | **Resuelto** | Informe redactado (`docs/Informe/Informe_10_ArquitecturaDatos.md`) con diagrama Mermaid del flujo por capas; fuente en `docs/arquitectura_datos.mmd` |
+| 11 | Seguridad, permisos, aislamiento | **Resuelto** | Informe redactado (`docs/Informe/Informe_11_SeguridadPermisosAislamiento.md`). DDL de roles, RLS por planta sobre `alerta` e `intervencion`, y ocultamiento de `id_usuario` con vista de oro (+ column-level `GRANT` documentado) en `db/estructura/40_seguridad_rls.sql`. Aislamiento verificado |
+| 12 | Escalabilidad y rendimiento | **Resuelto** | Informe redactado (`docs/Informe/Informe_12_EscalabilidadRendimiento.md`); apoya particionado, BRIN, retención diferenciada y precálculo de oro en el EXPLAIN de la actividad 8 |
 
 ### Clasificación de datos (actividad 2)
 
@@ -184,19 +186,14 @@ Pendientes de la materia que pueden ajustar terminología (no la sustancia) de d
 
 ## 9. Pendientes abiertos
 
-- Agrupamiento de alertas: **criterio ya definido** (se resuelve en la aplicación, no en la base, por decisión 27). Queda pendiente redactarlo en la actividad 10. Se vuelve más visible con el doble origen de la decisión 23: un mismo problema puede generar una alerta por umbral y otra predictiva.
-- Definir el mecanismo de ocultamiento de columnas sensibles para el científico de datos: vista de oro sin la columna vs. column-level `GRANT` (ver decisión 3 y actividad 11).
-- Confirmar la **dimensión del vector** de `intervencion.embedding` al elegir el modelo de embeddings (actividad 9; ver decisión 28).
-- Verificar en la actividad 11 el costo del recorrido que RLS necesita sobre `intervencion` (`intervencion` → `orden_trabajo` → `alerta` → `dispositivo` → `ubicacion`, cuatro saltos en un único camino, sin bifurcaciones). Evaluar si conviene materializar la planta como se hizo en `alerta` (decisión 26). El volumen bajo de la tabla sugiere que no sería necesario.
-- Confirmar terminología una vez vistas las Clases 6 y 7.
-- Aumentar el volumen de mediciones de ejemplo antes de la actividad 8: la carga actual (~44 mil filas, 10 días) valida el circuito pero es corta para que la consulta 6 (EXPLAIN plata vs oro) muestre diferencia real.
-- Completar los datos de ejemplo con un hueco de conectividad y su evento `ausencia de reporte` (hoy no hay datos de ese tipo, aunque el CHECK lo admite).
-- Calcular las features de bomba, cinta y tablero (por ahora sólo se pobló `feature_motor_ventana`).
-- Agregar un `.gitattributes` al repo para normalizar el fin de línea (LF) y evitar el ruido CRLF/LF entre Windows y el repositorio.
-- Escribir el SQL de las 6 consultas (actividad 8).
-- Diagrama formal de arquitectura (actividad 10).
+Las 12 actividades están resueltas. Quedan cuestiones menores y opcionales:
+
+- Confirmar la dimensión del vector de `intervencion.embedding` si se elige un modelo de embeddings real distinto de 384 (hoy se usan embeddings de ejemplo; ver decisiones 28 y 31).
+- Opcional: calcular embeddings reales con un modelo (`all-MiniLM-L6-v2`) en lugar de los de ejemplo, si se quiere que la búsqueda por similitud sea semántica de verdad.
+- Confirmar terminología una vez vistas las Clases 6 a 8 (no cambia la sustancia).
+- Conversión final del informe completo a PDF con Pandoc.
 - Decidir si este documento de contexto se versiona en el repo Git o queda solo como insumo de Claude Project Knowledge.
 
 ---
 
-*Última actualización: sesión del 21/08 (cierre de Actividades 6 y 7 — Selección tecnológica y Modelo físico e implementación). Próximo paso: Actividad 8 (Consultas representativas), previo aumento del volumen de datos de ejemplo.*
+*Última actualización: sesión del 24/08 (cierre de Actividades 8 a 12 — Consultas, Vectorial, Arquitectura, Seguridad/RLS y Escalabilidad). Las 12 actividades quedan resueltas; próximo paso: repaso final y conversión a PDF con Pandoc.*

@@ -1,0 +1,45 @@
+flowchart TB
+    S[Sensores IoT]:::ext -->|ingesta| BC[(bronce.medicion_cruda)]
+    CFG[Cambios de configuración]:::ext -->|ingesta| BCFG[(bronce.configuracion_cruda)]
+
+    subgraph BRONCE[BRONCE — crudo, JSONB, sin validar]
+        BC
+        BCFG
+    end
+
+    BC -->|validación / tipado| MED[(plata.medicion<br/>particionada)]
+    BCFG -->|validación| CFGV[(plata.configuracion_dispositivo)]
+
+    subgraph PLATA[PLATA — validado, 3FN, RLS activo]
+        MED
+        CFGV
+        EV[(plata.evento)]
+        AL[(plata.alerta)]
+        OT[(plata.orden_trabajo)]
+        IV[(plata.intervencion<br/>+ embedding)]
+    end
+
+    MED -->|trigger: umbral / calidad| EV
+    EV -->|agrupación en la app| AL
+    AL --> OT --> IV
+
+    MED -->|agregación| AGG[(oro.agregado_horario<br/>oro.agregado_diario)]
+    MED -->|ventana 24 h| FEAT[(oro.feature_*_ventana)]
+
+    subgraph ORO[ORO — analítico, desnormalizado]
+        AGG
+        FEAT
+        PRED[(oro.prediccion)]
+        MOD[(oro.modelo / corrida / metrica)]
+    end
+
+    FEAT -->|servicio de predicción| PRED
+    PRED -->|trigger: score > umbral| AL
+
+    AGG --> SUP[Supervisor / tableros]:::cons
+    AL --> APP[App operativa]:::cons
+    IV -->|búsqueda vectorial| TEC[Técnico]:::cons
+    FEAT --> DS[Científico de datos]:::cons
+
+    classDef ext fill:#e8e8e8,stroke:#888;
+    classDef cons fill:#dceefb,stroke:#3b7;

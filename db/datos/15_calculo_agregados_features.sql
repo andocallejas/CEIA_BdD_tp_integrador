@@ -69,6 +69,91 @@ UPDATE oro.feature_motor_ventana
    SET fallo_en_horizonte = true
  WHERE id_dispositivo = 1 AND ventana_hasta = DATE '2026-08-18';
 
--- feature_bomba_ventana, feature_cinta_ventana y
--- feature_tablero_ventana se calcularían igual, con las
--- variables de cada tipo. Se omiten por brevedad.
+-- Features de bombas.
+WITH med AS (
+    SELECT d.id_dispositivo, m.timestamp_medicion::date AS dia,
+           avg(m.valor) FILTER (WHERE tv.nombre = 'presion') AS pres_media,
+           max(m.valor) FILTER (WHERE tv.nombre = 'presion') AS pres_max,
+           coalesce(stddev_pop(m.valor) FILTER (WHERE tv.nombre = 'presion'), 0) AS pres_desvio,
+           avg(m.valor) FILTER (WHERE tv.nombre = 'caudal') AS caud_media,
+           coalesce(stddev_pop(m.valor) FILTER (WHERE tv.nombre = 'caudal'), 0) AS caud_desvio,
+           avg(m.valor) FILTER (WHERE tv.nombre = 'temperatura') AS temp_media,
+           max(m.valor) FILTER (WHERE tv.nombre = 'temperatura') AS temp_max
+    FROM plata.dispositivo d
+    JOIN plata.sensor s ON s.id_dispositivo = d.id_dispositivo
+    JOIN plata.tipo_variable tv ON tv.id_tipo_variable = s.id_tipo_variable
+    JOIN plata.medicion m ON m.id_sensor = s.id_sensor
+    WHERE d.id_tipo_dispositivo = 2
+    GROUP BY d.id_dispositivo, m.timestamp_medicion::date
+),
+ev AS (
+    SELECT se.id_dispositivo, e.timestamp_medicion::date AS dia, count(*) AS cant
+    FROM plata.evento e JOIN plata.sensor se ON se.id_sensor = e.id_sensor
+    GROUP BY se.id_dispositivo, e.timestamp_medicion::date
+)
+INSERT INTO oro.feature_bomba_ventana
+    (id_dispositivo, ventana_hasta, ventana_desde, pres_media, pres_max, pres_desvio,
+     pres_tendencia, caud_media, caud_desvio, temp_media, temp_max, cant_eventos,
+     horas_operacion, fallo_en_horizonte, timestamp_calculo)
+SELECT med.id_dispositivo, (med.dia + 1)::timestamptz, med.dia::timestamptz,
+       med.pres_media, med.pres_max, med.pres_desvio, 0,
+       med.caud_media, med.caud_desvio, med.temp_media, med.temp_max,
+       coalesce(ev.cant, 0), 24.0,
+       CASE WHEN med.dia < DATE '2026-08-18' THEN false ELSE NULL END, now()
+FROM med LEFT JOIN ev ON ev.id_dispositivo = med.id_dispositivo AND ev.dia = med.dia;
+
+-- Features de cintas.
+WITH med AS (
+    SELECT d.id_dispositivo, m.timestamp_medicion::date AS dia,
+           avg(m.valor) FILTER (WHERE tv.nombre = 'velocidad') AS vel_media,
+           coalesce(stddev_pop(m.valor) FILTER (WHERE tv.nombre = 'velocidad'), 0) AS vel_desvio,
+           avg(m.valor) FILTER (WHERE tv.nombre = 'corriente') AS corr_media,
+           max(m.valor) FILTER (WHERE tv.nombre = 'corriente') AS corr_max
+    FROM plata.dispositivo d
+    JOIN plata.sensor s ON s.id_dispositivo = d.id_dispositivo
+    JOIN plata.tipo_variable tv ON tv.id_tipo_variable = s.id_tipo_variable
+    JOIN plata.medicion m ON m.id_sensor = s.id_sensor
+    WHERE d.id_tipo_dispositivo = 3
+    GROUP BY d.id_dispositivo, m.timestamp_medicion::date
+),
+ev AS (
+    SELECT se.id_dispositivo, e.timestamp_medicion::date AS dia, count(*) AS cant
+    FROM plata.evento e JOIN plata.sensor se ON se.id_sensor = e.id_sensor
+    GROUP BY se.id_dispositivo, e.timestamp_medicion::date
+)
+INSERT INTO oro.feature_cinta_ventana
+    (id_dispositivo, ventana_hasta, ventana_desde, vel_media, vel_desvio, vel_tendencia,
+     corr_media, corr_max, cant_eventos, horas_operacion, fallo_en_horizonte, timestamp_calculo)
+SELECT med.id_dispositivo, (med.dia + 1)::timestamptz, med.dia::timestamptz,
+       med.vel_media, med.vel_desvio, 0, med.corr_media, med.corr_max,
+       coalesce(ev.cant, 0), 24.0,
+       CASE WHEN med.dia < DATE '2026-08-18' THEN false ELSE NULL END, now()
+FROM med LEFT JOIN ev ON ev.id_dispositivo = med.id_dispositivo AND ev.dia = med.dia;
+
+-- Features de tableros.
+WITH med AS (
+    SELECT d.id_dispositivo, m.timestamp_medicion::date AS dia,
+           avg(m.valor) FILTER (WHERE tv.nombre = 'consumo') AS cons_media,
+           max(m.valor) FILTER (WHERE tv.nombre = 'consumo') AS cons_max,
+           avg(m.valor) FILTER (WHERE tv.nombre = 'tension') AS tens_media,
+           coalesce(stddev_pop(m.valor) FILTER (WHERE tv.nombre = 'tension'), 0) AS tens_desvio
+    FROM plata.dispositivo d
+    JOIN plata.sensor s ON s.id_dispositivo = d.id_dispositivo
+    JOIN plata.tipo_variable tv ON tv.id_tipo_variable = s.id_tipo_variable
+    JOIN plata.medicion m ON m.id_sensor = s.id_sensor
+    WHERE d.id_tipo_dispositivo = 4
+    GROUP BY d.id_dispositivo, m.timestamp_medicion::date
+),
+ev AS (
+    SELECT se.id_dispositivo, e.timestamp_medicion::date AS dia, count(*) AS cant
+    FROM plata.evento e JOIN plata.sensor se ON se.id_sensor = e.id_sensor
+    GROUP BY se.id_dispositivo, e.timestamp_medicion::date
+)
+INSERT INTO oro.feature_tablero_ventana
+    (id_dispositivo, ventana_hasta, ventana_desde, cons_media, cons_max, cons_tendencia,
+     tens_media, tens_desvio, cant_eventos, horas_operacion, fallo_en_horizonte, timestamp_calculo)
+SELECT med.id_dispositivo, (med.dia + 1)::timestamptz, med.dia::timestamptz,
+       med.cons_media, med.cons_max, 0, med.tens_media, med.tens_desvio,
+       coalesce(ev.cant, 0), 24.0,
+       CASE WHEN med.dia < DATE '2026-08-18' THEN false ELSE NULL END, now()
+FROM med LEFT JOIN ev ON ev.id_dispositivo = med.id_dispositivo AND ev.dia = med.dia;

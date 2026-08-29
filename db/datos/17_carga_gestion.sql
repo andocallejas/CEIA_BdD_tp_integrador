@@ -49,3 +49,18 @@ INSERT INTO plata.intervencion (id_orden_trabajo, id_usuario, fecha, observacion
 SELECT ot.id_orden_trabajo, 3, '2026-08-19',
        'Cable de señal del sensor de corriente flojo en la bornera. Se reajusta y se verifica continuidad.'
 FROM plata.orden_trabajo ot WHERE ot.tipo = 'instrumentacion' ORDER BY ot.id_orden_trabajo LIMIT 1;
+
+INSERT INTO plata.intervencion (id_orden_trabajo, id_usuario, fecha, observaciones)
+SELECT ot.id_orden_trabajo, 3, '2026-08-20',
+       'Control posterior a las 4 horas. Vibración estable en 3,1 mm/s. Se cierra la orden.'
+FROM plata.orden_trabajo ot WHERE ot.tipo = 'correctiva' ORDER BY ot.id_orden_trabajo LIMIT 1;
+
+INSERT INTO plata.intervencion (id_orden_trabajo, id_usuario, fecha, observaciones)
+SELECT ot.id_orden_trabajo, 4, '2026-08-20',
+       'Se lubrican los rodamientos según plan preventivo. Ruido dentro de lo normal, sin observaciones.'
+FROM plata.orden_trabajo ot WHERE ot.tipo = 'correctiva' ORDER BY ot.id_orden_trabajo LIMIT 1;
+
+INSERT INTO plata.intervencion (id_orden_trabajo, id_usuario, fecha, observaciones)
+SELECT ot.id_orden_trabajo, 4, '2026-08-19',
+       'Se ajusta la calibración del sensor y se contrasta contra un patrón. Lecturas normalizadas.'
+FROM plata.orden_trabajo ot WHERE ot.tipo = 'instrumentacion' ORDER BY ot.id_orden_trabajo LIMIT 1;
